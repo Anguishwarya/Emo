@@ -5,10 +5,6 @@ import cv2
 from collections import Counter
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D
-import os
-
-# Disable GPU (CUDA) if not needed
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Disable GPU
 
 # Set Streamlit page configuration
 st.set_page_config(page_title="EmoTunes", page_icon="🎵")
@@ -80,28 +76,36 @@ emotion_dict = {0: "Angry", 1: "Disgusted", 2: "Fearful", 3: "Happy", 4: "Neutra
 st.title("EmoTunes")
 st.markdown("<h5 style='text-align: center;'>Click on a song to listen</h5>", unsafe_allow_html=True)
 
-# Upload image instead of webcam
-image_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
-
-if image_file is not None:
-    # Load image and prepare it for emotion detection
-    image = cv2.imdecode(np.fromstring(image_file.read(), np.uint8), 1)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
-    
+# Scan emotions on button click
+if st.button('SCAN EMOTION'):
+    cap = cv2.VideoCapture(0)  # Open the webcam
     detected_emotions = []
 
-    for (x, y, w, h) in faces:
-        cv2.rectangle(image, (x, y), (x + w, y + h), (255, 0, 0), 2)
-        roi_gray = gray[y:y + h, x:x + w]
-        cropped_img = np.expand_dims(np.expand_dims(cv2.resize(roi_gray, (48, 48)), -1), 0)
-        prediction = model.predict(cropped_img)
-        max_index = int(np.argmax(prediction))
-        detected_emotions.append(emotion_dict[max_index])
+    stframe = st.empty()  # Placeholder for video frames
 
-    # Display image in Streamlit
-    st.image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), channels="RGB", caption="Uploaded Image")
+    for _ in range(20):  # Process 20 frames
+        ret, frame = cap.read()
+        if not ret:
+            st.error("Unable to access camera. Please check permissions.")
+            break
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
+
+        for (x, y, w, h) in faces:
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            roi_gray = gray[y:y + h, x:x + w]
+            cropped_img = np.expand_dims(np.expand_dims(cv2.resize(roi_gray, (48, 48)), -1), 0)
+            prediction = model.predict(cropped_img)
+            max_index = int(np.argmax(prediction))
+            detected_emotions.append(emotion_dict[max_index])
+
+        # Display the frame in Streamlit
+        stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB", caption="Camera Feed")
+
+    cap.release()
+    cv2.destroyAllWindows()
 
     # Process detected emotions
     unique_emotions = pre(detected_emotions)
