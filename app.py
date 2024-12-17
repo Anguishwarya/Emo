@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import streamlit as st
 import pandas as pd
@@ -10,7 +11,7 @@ from tensorflow.keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2
 st.set_page_config(page_title="EmoTunes", page_icon="🎵")
 
 # Load the dataset
-df = pd.read_csv('muse_v3.csv')
+df = pd.read_csv(os.path.join(os.path.dirname(__file__), 'muse_v3.csv'))
 df['link'] = df['lastfm_url']
 df['name'] = df['track']
 df['emotional'] = df['number_of_emotion_tags']
@@ -69,7 +70,7 @@ model = Sequential([
 ])
 
 # Load pre-trained weights
-model.load_weights('model.h5')
+model.load_weights(os.path.join(os.path.dirname(__file__), 'models', 'model.h5'))
 emotion_dict = {0: "Angry", 1: "Disgusted", 2: "Fearful", 3: "Happy", 4: "Neutral", 5: "Sad", 6: "Surprised"}
 
 # Streamlit UI
@@ -83,23 +84,26 @@ if st.button('SCAN EMOTION'):
 
     stframe = st.empty()  # Placeholder for video frames
 
-    for _ in range(20):  # Process 20 frames
+    for _ in range(10):  # Process 10 frames instead of 20
         ret, frame = cap.read()
         if not ret:
             st.error("Unable to access camera. Please check permissions.")
             break
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+        face_cascade = cv2.CascadeClassifier(os.path.join(os.path.dirname(__file__), 'assets', 'haarcascade_frontalface_default.xml'))
         faces = face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
 
-        for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-            roi_gray = gray[y:y + h, x:x + w]
-            cropped_img = np.expand_dims(np.expand_dims(cv2.resize(roi_gray, (48, 48)), -1), 0)
-            prediction = model.predict(cropped_img)
-            max_index = int(np.argmax(prediction))
-            detected_emotions.append(emotion_dict[max_index])
+        if len(faces) > 0:
+            for (x, y, w, h) in faces:
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                roi_gray = gray[y:y + h, x:x + w]
+                cropped_img = np.expand_dims(np.expand_dims(cv2.resize(roi_gray, (48, 48)), -1), 0)
+                prediction = model.predict(cropped_img)
+                max_index = int(np.argmax(prediction))
+                detected_emotions.append(emotion_dict[max_index])
+        else:
+            detected_emotions.append("Neutral")
 
         # Display the frame in Streamlit
         stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB", caption="Camera Feed")
