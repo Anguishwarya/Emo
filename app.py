@@ -5,90 +5,70 @@ import cv2
 from collections import Counter
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D
-from chatbot import get_bard_response  # Import chatbot function
+from chatbot import get_bard_response  # Custom chatbot module
 
-# Set Streamlit page configuration
+# Set Streamlit config
 st.set_page_config(page_title="EmoTunes", page_icon="🎵")
 
-
-
-page_bg_img = f"""
+# Background style
+st.markdown("""
 <style>
-[data-testid="stAppViewContainer"] {{
-    background-image: url("https://images.unsplash.com/uploads/1412282232015a06e258a/4bdd2a58?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTJ8fG11c2ljJTIwYmFja2dyb3VuZHxlbnwwfHwwfHx8MA%3D%3D");
+[data-testid="stAppViewContainer"] {
+    background-image: url("https://images.unsplash.com/uploads/1412282232015a06e258a/4bdd2a58?w=500&auto=format&fit=crop&q=60");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
     background-attachment: fixed;
-}}
-
-[data-testid="stHeader"] {{
+}
+[data-testid="stHeader"] {
     background: rgba(0,0,0,0);
-}}
-
-[data-testid="stSidebar"] > div:first-child {{
+}
+[data-testid="stSidebar"] > div:first-child {
     background-color: rgba(255, 255, 255, 0.3);
-}}
+}
 </style>
-"""
-st.markdown(page_bg_img, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-
-
-
-# Add custom background using CSS
-
-
-# Load the dataset
+# Load dataset
 df = pd.read_csv('muse_v3.csv')
-df['link'] = df['lastfm_url']
-df['name'] = df['track']
-df['emotional'] = df['number_of_emotion_tags']
-df['pleasant'] = df['valence_tags']
-df = df[['name', 'emotional', 'pleasant', 'link', 'artist']]
-df = df.sort_values(by=["emotional", "pleasant"]).reset_index(drop=True)
+df = df.rename(columns={'lastfm_url': 'link', 'track': 'name', 'number_of_emotion_tags': 'emotional', 'valence_tags': 'pleasant'})
+df = df[['name', 'emotional', 'pleasant', 'link', 'artist']].sort_values(by=["emotional", "pleasant"]).reset_index(drop=True)
 
-# Split data into emotion categories
-df_sad = df[:18000]
-df_fear = df[18000:36000]
-df_angry = df[36000:54000]
-df_neutral = df[54000:72000]
-df_happy = df[72000:]
+# Emotion split
+df_sad, df_fear, df_angry, df_neutral, df_happy = np.array_split(df, 5)
 
-# Function to recommend songs based on emotions
-def fun(emotions_list):
-    data = pd.DataFrame()
+# Recommendation logic
+def recommend_songs(emotions):
+    emotion_map = {
+        'Sad': df_sad,
+        'Fearful': df_fear,
+        'Angry': df_angry,
+        'Neutral': df_neutral,
+        'Happy': df_happy
+    }
     sample_sizes = [30, 20, 15, 10, 7]
+    recommendations = pd.DataFrame()
 
-    for i, emotion in enumerate(emotions_list[:len(sample_sizes)]):
-        sample_size = sample_sizes[i]
-        if emotion == 'Neutral':
-            data = pd.concat([data, df_neutral.sample(n=sample_size)])
-        elif emotion == 'Angry':
-            data = pd.concat([data, df_angry.sample(n=sample_size)])
-        elif emotion == 'Fearful':
-            data = pd.concat([data, df_fear.sample(n=sample_size)])
-        elif emotion == 'Happy':
-            data = pd.concat([data, df_happy.sample(n=sample_size)])
-        else:
-            data = pd.concat([data, df_sad.sample(n=sample_size)])
+    for i, emotion in enumerate(emotions[:len(sample_sizes)]):
+        sample_df = emotion_map.get(emotion, df_sad)
+        recommendations = pd.concat([recommendations, sample_df.sample(n=sample_sizes[i])])
 
-    return data
+    return recommendations
 
-# Emotion preprocessing function
-def pre(emotion_list):
+# Preprocess top emotions
+def top_emotions(emotion_list):
     return [emotion for emotion, _ in Counter(emotion_list).most_common()]
 
-# Load the pre-trained model
+# Model initialization
 model = Sequential([
-    Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=(48, 48, 1)),
-    Conv2D(64, kernel_size=(3, 3), activation='relu'),
-    MaxPooling2D(pool_size=(2, 2)),
+    Conv2D(32, (3, 3), activation='relu', input_shape=(48, 48, 1)),
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPooling2D((2, 2)),
     Dropout(0.25),
-    Conv2D(128, kernel_size=(3, 3), activation='relu'),
-    MaxPooling2D(pool_size=(2, 2)),
-    Conv2D(128, kernel_size=(3, 3), activation='relu'),
-    MaxPooling2D(pool_size=(2, 2)),
+    Conv2D(128, (3, 3), activation='relu'),
+    MaxPooling2D((2, 2)),
+    Conv2D(128, (3, 3), activation='relu'),
+    MaxPooling2D((2, 2)),
     Dropout(0.25),
     Flatten(),
     Dense(1024, activation='relu'),
@@ -100,22 +80,20 @@ model = Sequential([
 model.load_weights('model.h5')
 emotion_dict = {0: "Angry", 1: "Disgusted", 2: "Fearful", 3: "Happy", 4: "Neutral", 5: "Sad", 6: "Surprised"}
 
-# Streamlit UI
+# Title
 st.title("🎵 EmoTunes")
 
-# Tabs for switching between features
+# Tabs
 tab1, tab2 = st.tabs(["🎭 Emotion-Based Music", "🤖 Chatbot"])
 
-# 🎭 Emotion-Based Music Recommendation
+# Tab 1: Emotion Detection and Music Recommendation
 with tab1:
     st.subheader("🎭 Scan Your Emotion & Get Songs")
 
-    # Scan emotions on button click
     if st.button('📷 Scan Emotion'):
-        cap = cv2.VideoCapture(0)  # Open the webcam
+        cap = cv2.VideoCapture(0)
         detected_emotions = []
-
-        stframe = st.empty()  # Placeholder for video frames
+        stframe = st.empty()
 
         for _ in range(10):
             ret, frame = cap.read()
@@ -140,21 +118,20 @@ with tab1:
         cap.release()
         cv2.destroyAllWindows()
 
-        unique_emotions = pre(detected_emotions)
-
+        filtered_emotions = top_emotions(detected_emotions)
         st.markdown("### 🎭 Detected Emotions:")
-        st.write(", ".join(unique_emotions))
+        st.write(", ".join(filtered_emotions))
 
-        recommended_songs = fun(unique_emotions)
+        songs = recommend_songs(filtered_emotions)
 
-        if not recommended_songs.empty:
+        if not songs.empty:
             st.markdown("### 🎶 Recommended Songs:")
-            for link, artist, name in zip(recommended_songs['link'], recommended_songs['artist'], recommended_songs['name']):
-                st.markdown(f"[{name} by {artist}]({link})", unsafe_allow_html=True)
+            for _, row in songs.iterrows():
+                st.markdown(f"[{row['name']} by {row['artist']}]({row['link']})", unsafe_allow_html=True)
         else:
             st.write("No songs to recommend based on detected emotions.")
 
-# 🤖 Bard Chatbot
+# Tab 2: Chatbot
 with tab2:
     st.subheader("🤖 Ask the AI Chatbot")
 
@@ -172,4 +149,3 @@ with tab2:
         response = get_bard_response(user_query)
         st.session_state.chat_history.append({"role": "assistant", "content": response})
         st.rerun()
-
