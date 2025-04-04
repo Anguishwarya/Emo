@@ -40,7 +40,7 @@ st.markdown(page_bg_img, unsafe_allow_html=True)
 
 
 # Load the dataset
-df = pd.read_csv(r'C:\Users\DELL\Desktop\emotion_music_recommendation\venv\Scripts\muse_v3.csv')
+df = pd.read_csv('muse_v3.csv')
 df['link'] = df['lastfm_url']
 df['name'] = df['track']
 df['emotional'] = df['number_of_emotion_tags']
